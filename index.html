@@ -86,7 +86,7 @@ textarea{min-height:120px;resize:vertical}
 // 11/18 用户：「单独的会计部键这个 APP 也做出来，因为给会计部看，然后让他们说有什么想更新的」。
 // 数据接口和「空桌一览」同一个后台（Apps Script）；会计部密码（或老板密码）才看得到。只有登记过的手机能用（手机编号 dv）。
 const API = 'https://script.google.com/macros/s/AKfycbxDX1OB8iAKYYpfBlncpfov66qsDdWfq6wjs2xNGydXDbkkUPf7NsOwwmd_PG2Dbpe0/exec';
-const APPV = 'kuaiji-v2';   // 版本号：和 sw.js 的 V 一起改
+const APPV = 'kuaiji-v3';   // 版本号：和 sw.js 的 V 一起改
 const LS = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
@@ -261,7 +261,25 @@ function renderSxAll() {
     '<label class="ck"><input type="checkbox" id="sxi"> ⭐ 重要（牵涉钱）</label>' +
     '<label>你的名字（谁加的）</label><input id="sxb" maxlength="20" value="' + esc(LS.get('sxBy', sxWho || '')) + '">' +
     '<button class="btn" id="sxadd" onclick="sxAdd()">加进清单</button></div>';
+  // 11/19 用户「毛线项目还没开始，暂时撤掉」→ 管理者自己也能撤掉事项（表里「停用」栏写上；删掉那几个字就恢复）
+  h += '<div class="card fm"><div class="ct">🗑 撤掉事项</div><div class="note">暂时不做的事项可以撤掉，撤掉后不在任何人的清单里、也不算应报。</div><label>负责人</label><select id="sxfo" onchange="sxOffOpts()">' + opts.map(n => '<option>' + esc(n) + '</option>').join('') + '</select>' +
+    '<label>事项</label><select id="sxfi"></select><button class="btn sub" id="sxoff" onclick="sxOff()">撤掉这件</button></div>';
+  setTimeout(sxOffOpts, 0);
   return h;
+}
+function sxOffOpts() { const o = $('sxfo'), i = $('sxfi'); if (!o || !i || !SX) return; i.innerHTML = SX.items.filter(it => it.who === o.value).map(it => '<option value="' + esc(it.id) + '">' + esc(it.cat + '・' + it.n) + '</option>').join(''); }
+async function sxOff() {
+  const id = $('sxfi').value, it = SX.items.find(x => x.id === id), by = ($('sxb') && $('sxb').value.trim()) || LS.get('sxBy', '') || sxWho;
+  if (!it) return;
+  if (!by) { alert('请先在上面「你的名字」写上名字'); return; }
+  if (!confirm('撤掉「' + it.n + '」（' + it.who + '）？')) return;
+  $('sxoff').disabled = true; $('sxoff').textContent = '保存中…';
+  try {
+    const d = await api('&what=sxdo&act=off&id=' + encodeURIComponent(id) + '&who=' + encodeURIComponent(by));
+    if (!d || !d.items) throw new Error((d && d.error) || '没存上');
+    SX = d; LS.set('acsx', JSON.stringify(d)); sxMsg = '<div class="ok">✓ 已撤掉：' + esc(it.n) + '（' + esc(it.who) + '）</div>';
+  } catch (e) { sxMsg = '<div class="err">没撤掉：' + esc(e.message) + '</div>'; }
+  render(); window.scrollTo(0, 0);
 }
 async function sxAdd() {
   const name = $('sxn').value.trim(), own = $('sxo').value, cat = $('sxc').value, due = $('sxd').value.trim(), imp = $('sxi').checked ? '1' : '', by = $('sxb').value.trim();
