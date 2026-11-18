@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>会计部</title>
+<meta name="theme-color" content="#6d28d9">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="会计部">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--ink:#16181d;--sub:#6b7280;--line:#e5e7eb;--soft:#f0f1f4;--brand:#6d28d9;--warnbg:#fef3c7;--warn:#78350f;--ok:#15803d;--bad:#dc2626}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--ink:#eceef2;--sub:#9aa1ad;--line:#2a2e36;--soft:#22262e;--brand:#8b5cf6;--warnbg:#3a2f12;--warn:#fde68a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Hiragino Sans","PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;-webkit-text-size-adjust:100%}
+.wrap{max-width:720px;margin:0 auto;padding:calc(10px + env(safe-area-inset-top)) 16px calc(30px + env(safe-area-inset-bottom))}
+.top{display:flex;align-items:center;gap:8px;margin:4px 0 10px}
+.top h1{flex:1;margin:0;font-size:22px}
+.top small{color:var(--sub);font-size:12px}
+.tabs{display:flex;gap:6px;position:sticky;top:0;z-index:2;background:var(--bg);padding:4px 0 10px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{flex:1 0 auto;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:8px 12px;font-size:14.5px;font-weight:600}
+.tabs button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:10px 0}
+.ct{font-weight:700;font-size:15.5px;margin-bottom:4px}
+.note{font-size:13px;color:var(--sub);line-height:1.65;margin:4px 0}
+.miss{background:var(--warnbg);color:var(--warn);border-radius:10px;padding:8px 10px;font-size:13.5px;line-height:1.6;margin:6px 0}
+.btn{display:block;width:100%;margin-top:10px;padding:12px;border:0;border-radius:12px;background:var(--brand);color:#fff;font:inherit;font-size:15px;font-weight:600}
+.btn.sub{background:var(--soft);color:var(--ink);font-weight:500}
+.btn:disabled{opacity:.5}
+input,textarea{display:block;width:100%;margin-top:8px;padding:10px;font:inherit;font-size:16px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+textarea{min-height:120px;resize:vertical}
+.msg{border-top:1px solid var(--line);padding:9px 0}
+.msg:first-child{border-top:0}
+.msg small{display:block;color:var(--sub);font-size:12px}
+.msg div{white-space:pre-wrap;word-break:break-word}
+.ok{color:var(--ok);font-size:13.5px;margin-top:8px}
+.err{color:var(--bad);font-size:13.5px;margin-top:8px}
+.foot{font-size:12px;color:var(--sub);text-align:center;margin-top:16px;line-height:1.7}
+.foot a{color:var(--brand);cursor:pointer}
+#keybox{display:none;text-align:center;padding:40px 8px}
+#keybox img{width:72px;height:72px;border-radius:18px}
+#keybox input{max-width:260px;margin:12px auto 0;text-align:center}
+#keybox .btn{max-width:260px;margin:12px auto 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="keybox">
+    <img src="icon-192.png" alt="">
+    <p id="ktip">会计部 APP<br>请输入负责人给的密码</p>
+    <input id="kin" autocomplete="off" autocapitalize="off" enterkeyhint="go" onkeydown="if(event.key==='Enter')saveKey()">
+    <button class="btn" id="kgo" onclick="saveKey()">开始使用</button>
+    <button class="btn sub" id="kretry" style="display:none" onclick="load()">重新试一次</button>
+    <p id="kerr" class="err"></p>
+  </div>
+  <div id="main" style="display:none">
+    <div class="top"><h1>🧾 会计部</h1><small id="age"></small></div>
+    <div class="tabs" id="tabs"></div>
+    <div id="body"></div>
+    <div class="foot" id="foot"></div>
+  </div>
+</div>
+<script>
+// 11/18 用户：「单独的会计部键这个 APP 也做出来，因为给会计部看，然后让他们说有什么想更新的」。
+// 数据接口和「空桌一览」同一个后台（Apps Script）；会计部密码（或老板密码）才看得到。只有登记过的手机能用（手机编号 dv）。
+const API = 'https://script.google.com/macros/s/AKfycbxDX1OB8iAKYYpfBlncpfov66qsDdWfq6wjs2xNGydXDbkkUPf7NsOwwmd_PG2Dbpe0/exec';
+const APPV = 'kuaiji-v1';   // 版本号：和 sw.js 的 V 一起改
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let K = LS.get('k', '');
+const fromUrl = (location.hash.match(/k=([^&]+)/) || [])[1];
+if (fromUrl) { K = decodeURIComponent(fromUrl); LS.set('k', K); history.replaceState(null, '', location.pathname); }
+const DV = (() => { let v = LS.get('dv', ''); if (!/^[0-9a-f]{32}$/.test(v)) { const a = new Uint8Array(16); crypto.getRandomValues(a); v = Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); LS.set('dv', v); } return v; })();
+const DVUA = (() => { const u = navigator.userAgent, st = (navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)) ? '主屏幕APP' : '浏览器'; let m;
+  if ((m = u.match(/iPhone OS ([\d_]+)/))) return `iPhone iOS ${m[1].replace(/_/g, '.')}・${st}・会计部APP`;
+  if ((m = u.match(/iPad.*? OS ([\d_]+)/))) return `iPad iOS ${m[1].replace(/_/g, '.')}・${st}・会计部APP`;
+  if ((m = u.match(/Android ([\d.]+); ([^;)]+)/))) return `Android ${m[1]} ${m[2].trim()}・${st}・会计部APP`;
+  return `${(u.match(/Windows NT|Macintosh|Android|Linux/) || ['其他'])[0]}・${st}・会计部APP`; })();
+const api = q => fetch(API + '?fmt=json' + q + '&k=' + encodeURIComponent(K) + '&dv=' + DV + '&ua=' + encodeURIComponent(DVUA), { cache: 'no-store' }).then(r => r.json());
+
+const TABS = [['cash', '资金余额'], ['pay', '要付的钱'], ['pl', '月度损益'], ['msg', '💬 想更新什么']];
+const INFO = {
+  cash: ['各公司银行・现金余额，这个月进了多少、出了多少。', 'Google Drive「11家流水」整理出来的现金流（残高）表。'],
+  pay: ['请求书・信用卡要付的钱：哪天付、付多少，快到期的标出来。', '公司档案里的请求书、信用卡明细。'],
+  pl: ['每家店每个月：营业额 − 工资 − 食材酒水 − 房租等，看赚多少。', '营业额＝收银台日报；工资＝工资表；食材酒水・房租等＝freee 记账。'],
+};
+let tab = LS.get('acTab', 'cash'), AC = null, sendMsg = '', draft = '';
+if (!TABS.some(t => t[0] === tab)) tab = 'cash';
+
+function showKey(msg, blocked) {
+  $('main').style.display = 'none'; $('keybox').style.display = 'block';
+  $('kin').style.display = $('kgo').style.display = blocked ? 'none' : '';
+  $('kretry').style.display = blocked ? '' : 'none';
+  if (!blocked) $('ktip').innerHTML = '会计部 APP<br>请输入负责人给的密码';
+  $('kerr').textContent = msg || '';
+}
+function saveKey() { const v = $('kin').value.trim(); if (!v) return; K = v; LS.set('k', K); load(); }
+function changeKey() { LS.del('k'); K = ''; LS.del('acc'); AC = null; showKey(''); }
+async function load() {
+  if (!K) return showKey('');
+  if (!AC) { try { AC = JSON.parse(LS.get('acc', 'null')); } catch (e) {} if (AC) render(); }
+  try {
+    const d = await api('&what=ac');
+    if (d.error === 'key') { LS.del('k'); K = ''; return showKey('密码不对，请再确认一下'); }
+    if (d.error === 'device') {   // 没登记的手机：不显示任何东西，手机里存的也删掉
+      LS.del('acc'); AC = null;
+      $('ktip').innerHTML = `🔒 这台手机还没登记，不能使用。<br>已经通知负责人。<br>手机编号：<b>${esc(d.id || '—')}</b><br><small>请负责人在「空桌一览 › 📱 登录手机」里开放登记，然后按下面的「重新试一次」。</small>`;
+      return showKey('', true);
+    }
+    if (d.error === 'owner') { LS.del('k'); K = ''; return showKey('这个密码看不到会计部，请用会计部密码'); }
+    if (d.error) throw new Error(d.error);
+    AC = d; LS.set('acc', JSON.stringify(d));
+  } catch (e) { if (!AC) return showKey('读不到（' + e.message + '），等一下再试'); }
+  render();
+}
+function go(t) { tab = t; LS.set('acTab', t); sendMsg = ''; render(); window.scrollTo(0, 0); }
+function ask(t) { const nm = TABS.find(x => x[0] === t)[1]; draft = `【${nm}】`; go('msg'); setTimeout(() => { const e = $('mv'); if (e) { e.focus(); e.setSelectionRange(e.value.length, e.value.length); } }, 50); }
+function render() {
+  $('keybox').style.display = 'none'; $('main').style.display = 'block';
+  $('age').textContent = AC && AC.now ? AC.now.slice(5) + ' 更新' : '';
+  $('tabs').innerHTML = TABS.map(([k, n]) => `<button class="${tab === k ? 'on' : ''}" onclick="go('${k}')">${n}</button>`).join('');
+  let h = '';
+  if (tab === 'msg') {
+    h += `<div class="card"><div class="ct">💬 想更新什么、想看什么，直接写</div><div class="note">比如：「资金余额想按公司分开看」「要付的钱想提前 7 天提醒」「月度损益想加上水电费」。发出去以后老板会收到邮件。</div>`
+      + `<input id="mw" placeholder="你的名字（例：会计 李）" value="${esc(LS.get('acWho', ''))}" maxlength="20">`
+      + `<textarea id="mv" placeholder="写在这里（最多 1000 字）" maxlength="1000">${esc(draft)}</textarea>`
+      + `<button class="btn" id="msend" onclick="send()">发送</button>${sendMsg}</div>`;
+    const ms = (AC && AC.msgs) || [];
+    h += `<div class="card"><div class="ct">已经收到的意见（${ms.length} 条）</div>` + (ms.length ? ms.map(m => `<div class="msg"><small>${esc(m.t)}　${esc(m.who)}</small><div>${esc(m.v)}</div></div>`).join('') : '<div class="note">还没有。</div>') + '</div>';
+  } else {
+    const nm = TABS.find(x => x[0] === tab)[1], [what, src] = INFO[tab];
+    h += `<div class="miss">🧾 ${nm}：<b>数据源无</b>——还没接上数据（先把页面做出来，请会计部先看看想要什么）。</div>`
+      + `<div class="card"><div class="ct">接上以后这里显示</div><div class="note">${what}</div><div class="ct" style="margin-top:10px">数据从哪里来</div><div class="note">${src}</div>`
+      + `<button class="btn sub" onclick="ask('${tab}')">💬 对这一页提意见</button></div>`;
+  }
+  $('body').innerHTML = h;
+  $('foot').innerHTML = `只有会计部密码和老板密码看得到。<br><a onclick="changeKey()">🔑 换密码</a>　版本 ${APPV.replace('kuaiji-v', '')}`;
+}
+async function send() {
+  const v = $('mv').value.trim(), who = $('mw').value.trim();
+  if (!v || v === draft.trim()) { sendMsg = '<div class="err">内容还是空的</div>'; draft = $('mv').value; return render(); }
+  LS.set('acWho', who); draft = v; $('msend').disabled = true; $('msend').textContent = '发送中…';
+  try {
+    const d = await api('&what=acmsg&who=' + encodeURIComponent(who) + '&v=' + encodeURIComponent(v));
+    if (d.error) throw new Error(d.error === 'device' ? '这台手机没登记' : d.error);
+    AC = d; LS.set('acc', JSON.stringify(d)); draft = ''; sendMsg = '<div class="ok">✓ 发出去了，老板会收到邮件。</div>';
+  } catch (e) { sendMsg = `<div class="err">没发出去：${esc(e.message)}。内容还在，等一下再按一次。</div>`; }
+  render();
+}
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+async function checkUpdate() {
+  try {
+    const t = await (await fetch('sw.js', { cache: 'no-store' })).text(), v = (t.match(/const V = '([^']+)'/) || [])[1];
+    if (v && v !== APPV && LS.get('reloadedFor', '') !== v) { LS.set('reloadedFor', v); location.reload(); }
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkUpdate(); if (K && tab !== 'msg') load(); } });
+checkUpdate();
+load();
+</script>
+</body>
+</html>
