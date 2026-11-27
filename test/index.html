@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <base href="../">
-<meta name="test-base" content="2f3e8f2f91da">
+<meta name="test-base" content="d11efbd69f47">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>会计部</title>
@@ -129,7 +129,7 @@ const PVAC = IN_KZ && LS.get('asRole', '') === 'ac';
 function exitPreview() { ['asRole', 'asStaff', 'last', 'acrq'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} }); location.href = './'; }
 const api = q => fetch(API + '?fmt=json' + q + '&k=' + encodeURIComponent(K) + '&dv=' + DV + '&ua=' + encodeURIComponent(DVUA) + (PVAC ? '&as=ac' : ''), { cache: 'no-store' }).then(r => r.json());
 
-const TABS = [['sx', '📋 事项汇报'], ['ns', '💴 取消料'], ['cy', '🔎 当月预估表异常'], ['pt', '🎫 积分对账'], ['bb', '🎁 BB 费用'], ['gz', '💰 工资・社内对账'], ['bk', '🏦 会计入力银行数校对'], ['wc', '💴 未存现金'], ['msg', '💡 提需求'], ['cash', '资金余额'], ['pay', '要付的钱'], ['pl', '月度损益']];   // 11/19 用户：「没有提需求这个键」——第 5 个在手机上被挤到右边看不见 → 放第 2 个，标签换行全部看得到
+const TABS = [['sx', '📋 事项汇报'], ['ns', '💴 取消料'], ['cy', '🔎 当月预估表异常'], ['nh', '📷 纳品书异常'], ['pt', '🎫 积分对账'], ['bb', '🎁 BB 费用'], ['gz', '💰 工资・社内对账'], ['bk', '🏦 会计入力银行数校对'], ['wc', '💴 未存现金'], ['msg', '💡 提需求'], ['cash', '资金余额'], ['pay', '要付的钱'], ['pl', '月度损益']];   // 11/19 用户：「没有提需求这个键」——第 5 个在手机上被挤到右边看不见 → 放第 2 个，标签换行全部看得到
 const INFO = {
   cash: ['各公司银行・现金余额，这个月进了多少、出了多少。', 'Google Drive「11家流水」整理出来的现金流（残高）表。'],
   pay: ['请求书・信用卡要付的钱：哪天付、付多少，快到期的标出来。', '公司档案里的请求书、信用卡明细。'],
@@ -168,9 +168,10 @@ async function load() {
   if (tab === 'msg') loadRq();
   if (tab === 'ns') loadNs();
   if (tab === 'cy') loadCy();
+  if (tab === 'nh') loadNh();
   if (tab === 'pt' || tab === 'bb' || tab === 'gz' || tab === 'wc' || tab === 'bk') loadPt();
 }
-function go(t) { tab = t; LS.set('acTab', t); sendMsg = ''; render(); window.scrollTo(0, 0); if (t === 'sx') loadSx(); if (t === 'msg') loadRq(); if (t === 'ns') loadNs(); if (t === 'cy') loadCy(); if (t === 'pt' || t === 'bb' || t === 'gz' || t === 'wc' || t === 'bk') loadPt(); }
+function go(t) { tab = t; LS.set('acTab', t); sendMsg = ''; render(); window.scrollTo(0, 0); if (t === 'sx') loadSx(); if (t === 'msg') loadRq(); if (t === 'ns') loadNs(); if (t === 'cy') loadCy(); if (t === 'nh') loadNh(); if (t === 'pt' || t === 'bb' || t === 'gz' || t === 'wc' || t === 'bk') loadPt(); }
 function ask(t) { const nm = TABS.find(x => x[0] === t)[1]; draft = `【${nm}】`; go('msg'); setTimeout(() => { const e = $('mv'); if (e) { e.focus(); e.setSelectionRange(e.value.length, e.value.length); } }, 50); }
 function render() {
   $('keybox').style.display = 'none'; $('main').style.display = 'block';
@@ -181,6 +182,7 @@ function render() {
   else if (tab === 'msg') h += renderRq();
   else if (tab === 'ns') h += renderNs();
   else if (tab === 'cy') h += renderCy();
+  else if (tab === 'nh') h += renderNh();
   else if (tab === 'pt') h += renderPt();
   else if (tab === 'bb') h += renderBb();
   else if (tab === 'gz') h += renderGz();
@@ -483,6 +485,105 @@ function renderCy() {
   return h;
 }
 
+// ===== 11/27 📷 纳品书异常（用户：「纳品书的异常要放到会计 APP 里面」）=====
+// 数据不另做：电脑 库存管理\库存汇总.py（每晚 22:30 每日库存.py＋12:15 每日提交检查）写云端「库存管理」表 → 后台 what=kc（股东・会计部密码）。
+// 这里只拿 rows t=is 里纳品书相关的 kind；签名用 what=kcdo（编号 kc| 开头），和库存 APP「🚨 库存异常」同一份签名，签一边两边都算已处理。
+const NH_KINDS = ['未发单据', '限店商品', '商品待确认', '供应商不明', '看不清', '店名不明', '非登记供应商', '合计对不上', '疑似重复'];
+const NH_TIP = { '未发单据': '这一天没发照片也没报「无」', '限店商品': '进了只许指定店订的商品', '商品待确认': '商品名・规格和供应商 Master 对不上（不等于违规）', '供应商不明': '照片看不出供应商', '看不清': '金额看不清／不是納品書', '店名不明': '对不上 31 家', '非登记供应商': '不在供应商名单', '合计对不上': '明细加起来不等于合计', '疑似重复': '同一张单可能拍了两次' };
+function nhPick(d) {
+  const rows = (d && d.rows) || [], ok = new Set(NH_KINDS), is = rows.filter(x => x && x.t === 'is' && ok.has(x.kind)), sg = {};
+  is.forEach(x => { if (d.sg && d.sg[x.id]) sg[x.id] = d.sg[x.id]; });
+  const hd = rows.find(x => x && x.t === 'head') || {};
+  return { at: d.at || '', head: { ym: hd.ym || '', at: hd.at || '', ana: (hd.ana || []).filter(t => /^📷/.test(t)) }, is, sg };
+}
+let NH = (() => { try { return JSON.parse(LS.get('acnh', 'null')); } catch (e) { return null; } })(), nhBusy = false, nhErr = '', nhAt = 0, nhMsg = {};
+let nhSt = '', nhKd = '', nhS = 'open', nhLv = '', nhQ = '', nhN = 60, nhT = 0;
+async function loadNh(force) {
+  if (nhBusy || (!force && Date.now() - nhAt < 20000)) return; nhBusy = true; nhAt = Date.now();
+  try {
+    const d = await api('&what=kc');
+    if (d && d.rows) { NH = nhPick(d); nhErr = ''; LS.set('acnh', JSON.stringify(NH)); }
+    else nhErr = d && d.error === 'device' ? '这台手机没登记' : d && d.error === 'owner' ? '这个密码看不到纳品书异常' : '读不到（' + ((d && d.error) || '') + '）';
+  } catch (e) { nhErr = '读不到（' + e.message + '）'; }
+  nhBusy = false; if (tab === 'nh') render();
+}
+async function nhDo(i, undo) {
+  const it = ((NH && NH.is) || [])[i]; if (!it) return;
+  const who = (($('nhw') || {}).value || '').trim(), how = (($('nhh_' + i) || {}).value || '').trim();
+  if (!undo && !who) { nhMsg[it.id] = '<div class="err">请先在上面写你的名字</div>'; return render(); }
+  if (!undo && !how) { nhMsg[it.id] = '<div class="err">请写怎么处理的（例：店长已补发／新商品已加进 Master／不是重复）</div>'; return render(); }
+  if (who) LS.set('acWho', who);
+  nhMsg[it.id] = '<div class="note">保存中…</div>'; render();
+  try {
+    const q = '&what=kcdo&ids=' + encodeURIComponent(JSON.stringify([it.id])) + '&who=' + encodeURIComponent(who || '—') + (undo ? '&act=undo' : '&how=' + encodeURIComponent(how))
+      + '&ctx=' + encodeURIComponent(JSON.stringify({ 店: it.store, 类: '纳品书・' + it.kind, 摘: it.title }));
+    const d = await api(q);
+    if (d.error) throw new Error(d.error === 'device' ? '这台手机没登记' : d.error);
+    NH = nhPick(d); LS.set('acnh', JSON.stringify(NH)); nhMsg[it.id] = undo ? '<div class="note">已撤销</div>' : '';
+  } catch (e) { nhMsg[it.id] = `<div class="err">没保存：${esc(e.message)}</div>`; }
+  render();
+}
+function nhSet(k, v) {
+  if (k === 'q') { nhQ = v; clearTimeout(nhT); nhT = setTimeout(() => { nhN = 60; render(); const e = $('nhq'); if (e) { e.focus(); e.setSelectionRange(e.value.length, e.value.length); } }, 300); return; }
+  if (k === 'St') nhSt = v;
+  else if (k === 'Kd') nhKd = nhKd === v ? '' : v;
+  else if (k === 'S') nhS = v;
+  else if (k === 'Lv') nhLv = v;
+  nhN = 60; render();
+}
+function nhMore() { nhN += 100; render(); }
+function nhClear() { nhQ = ''; nhSt = ''; nhKd = ''; nhN = 60; render(); }
+// 一条可能写几家店（「上野新8F・船橋」「10 家店」）→ 拆开；「_待分店」显示成 待分店
+function nhStores(x) {
+  return String(x.store || '').split('・').map(n => n.replace('…', '').replace(/^_/, '').trim()).filter(Boolean).map(n => /^\d+ 家店$/.test(n) ? '@多' : n);
+}
+function renderNh() {
+  let h = '<div class="card"><div class="ct">📷 纳品书异常</div><div class="note">各店发到 Slack #食材纳品书检测 的納品書照片，电脑每天自动存进会计云端（仕入れ請求書+賃金台帳 的 食材納品書）、识别、按「订货单测试」「点货名单」规则核对：'
+    + '<b>12:15</b> 查前一天 31 家有没有发单据（没进货也要发「无」），<b>22:30</b> 识别新照片、查商品。<br>处理了请在每条下面签名（写怎么处理的）——和库存 APP「🚨 库存异常」是同一份签名，签一边两边都算已处理。</div></div>';
+  if (!NH) return h + `<div class="card"><div class="note">${nhBusy ? '读取中…' : esc(nhErr || '还没有数据')}</div></div>`;
+  if (nhErr) h += `<div class="miss">${esc(nhErr)}（显示的是上次读到的）</div>`;
+  const all = NH.is || [], sg = NH.sg || {}, hd = NH.head || {};
+  h += `<div class="note" style="margin:2px 2px 6px">${esc(hd.ym || '')} 月・电脑 ${esc(hd.at || NH.at || '')} 上传${nhBusy ? '・读取中…' : ''}</div>`;
+  (hd.ana || []).forEach(t => { h += `<div class="miss" style="font-weight:600">${esc(t)}</div>`; });
+  const open = all.filter(x => !sg[x.id]), nr = open.filter(x => x.lv === 'r').length;
+  h += `<div class="kp" style="grid-template-columns:repeat(3,1fr)"><div class="r"><b>${nr}</b><small>🔴 未处理</small></div><div><b style="color:#d97706">${open.length - nr}</b><small>🟡 未处理</small></div><div><b style="color:var(--ok)">${all.length - open.length}</b><small>✅ 已处理</small></div></div>`;
+  const pr = all.map((x, i) => [x, i]), stOk = x => !nhSt || nhStores(x).includes(nhSt);
+  const q = nhQ.trim().toLowerCase(), hit = x => !q || [x.store, x.kind, x.title, x.why, x.fix, (sg[x.id] || []).join(' ')].join(' ').toLowerCase().includes(q);
+  const base = pr.filter(([x]) => (nhS === 'all' || (nhS === 'done') === !!sg[x.id]) && (!nhLv || x.lv === nhLv) && hit(x));
+  const kc = {}, sc = {};
+  base.filter(([x]) => stOk(x)).forEach(([x]) => { kc[x.kind] = (kc[x.kind] || 0) + 1; });
+  base.filter(([x]) => !nhKd || x.kind === nhKd).forEach(([x]) => { [...new Set(nhStores(x))].forEach(n => { sc[n] = (sc[n] || 0) + 1; }); });
+  const L = base.filter(([x]) => stOk(x) && (!nhKd || x.kind === nhKd)).sort((a, b) => (a[0].lv === 'r' ? 0 : 1) - (b[0].lv === 'r' ? 0 : 1));
+  const snm = n => n === '@多' ? '几家店共通的' : n;
+  h += '<div class="card fm" style="padding-top:6px"><label>店</label><select style="max-width:100%" onchange="nhSet(\'St\',this.value)"><option value="">全部店</option>'
+    + Object.entries(sc).sort((a, b) => b[1] - a[1]).map(([n, c]) => `<option value="${esc(n)}"${n === nhSt ? ' selected' : ''}>${esc(snm(n))}（${c}）</option>`).join('')
+    + (nhSt && !sc[nhSt] ? `<option value="${esc(nhSt)}" selected>${esc(snm(nhSt))}（0）</option>` : '') + '</select>'
+    + `<input id="nhq" value="${esc(nhQ)}" oninput="nhSet('q',this.value)" placeholder="🔍 查：商品名・供应商・日期（例：カクヤス、11-26）">`
+    + `<label>签名用的名字</label><input id="nhw" value="${esc(LS.get('acWho', '') || (AC && AC.owner ? '股东' : ''))}" placeholder="你的名字"></div>`;
+  const SS = [['open', '未处理'], ['done', '已处理'], ['all', '全部']], LV = [['', '红黄都看'], ['r', '🔴 只看红'], ['y', '🟡 只看黄']];
+  h += '<div class="seg2">' + SS.map(([k, n]) => `<button class="${nhS === k ? 'on' : ''}" onclick="nhSet('S',${jq(k)})">${n}</button>`).join('') + '</div>';
+  h += '<div class="seg2">' + LV.map(([k, n]) => `<button class="${nhLv === k ? 'on' : ''}" onclick="nhSet('Lv',${jq(k)})">${n}</button>`).join('') + '</div>';
+  h += '<div class="seg2" style="flex-wrap:wrap">' + `<button class="${!nhKd ? 'on' : ''}" style="flex:1 0 30%" onclick="nhSet('Kd','')">全部类型</button>`
+    + NH_KINDS.filter(k => kc[k] || nhKd === k).map(k => `<button class="${nhKd === k ? 'on' : ''}" style="flex:1 0 30%" onclick="nhSet('Kd',${jq(k)})">${esc(k)} ${kc[k] || 0}</button>`).join('') + '</div>';
+  if (nhKd && NH_TIP[nhKd]) h += `<div class="note" style="margin:0 2px 4px">${esc(nhKd)}：${esc(NH_TIP[nhKd])}</div>`;
+  h += `<div class="grp">查到 ${L.length} 条${nhSt || nhKd || q ? '　<a onclick="nhClear()" style="color:var(--brand);cursor:pointer">清除条件</a>' : ''}</div>`;
+  const card = ([x, i]) => {
+    const s = sg[x.id], cls = s ? 'sg' : x.lv === 'r' ? 'cr' : 'cyy', sn = String(x.store || '').replace(/^_/, '');
+    return `<div class="it ${cls}" style="overflow-wrap:anywhere;min-width:0"><div class="nm">${x.lv === 'r' ? '🔴' : '🟡'} ${esc(sn)} <span class="pill p0">${esc(x.kind)}</span></div>`
+      + `<div style="margin-top:4px;font-size:14.5px">${esc(x.title)}</div>`
+      + (x.why ? `<div class="why">${esc(x.why)}</div>` : '') + (x.fix ? `<div class="fix">👉 ${esc(x.fix)}</div>` : '')
+      + (s ? `<div class="sgd">✅ ${esc(s[0])}　${esc(String(s[1] || '').slice(5, 16))}${s[2] ? '：' + esc(s[2]) : ''}<a onclick="nhDo(${i},1)">撤销</a></div>`
+        : `<div class="cysg"><input id="nhh_${i}" placeholder="怎么处理的"><button onclick="nhDo(${i})">✅ 已处理</button></div>`)
+      + (nhMsg[x.id] || '') + '</div>';
+  };
+  if (!all.length) h += '<div class="card"><div class="ok" style="margin:0">✓ 本月没有纳品书异常</div></div>';
+  else if (!L.length) h += `<div class="card"><div class="ok" style="margin:0">${nhS === 'open' && !nhSt && !nhKd && !q ? '✓ 全部处理完了' : '没有符合的'}</div></div>`;
+  h += L.slice(0, nhN).map(card).join('');
+  if (L.length > nhN) h += `<button class="btn sub" onclick="nhMore()">再显示 ${Math.min(100, L.length - nhN)} 条（还有 ${L.length - nhN} 条）</button>`;
+  h += '<button class="btn sub" onclick="loadNh(1)">🔄 重新读取</button>';
+  return h;
+}
+
 // ===== 11/24 🎫 积分对账（用户：「APP里面添加积分对账，跟各个店铺的HGTR的对账…异常解决了后…异常消失，怎么做到闭环」）=====
 // 电脑 会计部\积分对账\积分对账.py 每天比：预约台账（レストランボード）× 收银（POS 积分）× 店铺日报（K=H・L=G・N=T）→ 后台「积分对账」表。
 // 后台 what=pt 读（rows：head・各店 st{H,T,G:{rv 已到店预约, rw 来店待ち, pos 收银, dr 日报, bad}}・每条 it）、what=ptdo 签名（编号 pt| 开头）。
@@ -499,6 +600,9 @@ async function loadPt(force) {
   } catch (e) { ptErr = '读不到（' + e.message + '）'; }
   ptBusy = false; if (tab === 'pt' || tab === 'bb' || tab === 'gz' || tab === 'wc' || tab === 'bk') render();
 }
+let ptP = LS.get('ptP', 'm0'), ptFrom = LS.get('ptFrom', ''), ptTo = LS.get('ptTo', '');
+function ptSetP(k) { ptP = k; LS.set('ptP', k); ptStore = ''; render(); }
+function ptSetC() { ptFrom = ($('ptf') || {}).value || ''; ptTo = ($('ptt') || {}).value || ''; LS.set('ptFrom', ptFrom); LS.set('ptTo', ptTo); render(); }
 function ptItems() { return PT ? (PT.rows || []).filter(x => x && x.k === 'it') : []; }
 function ptPick(s) { ptStore = ptStore === s ? '' : s; render(); const e = $('ptlist'); if (e) e.scrollIntoView(); }
 function ptTog() { ptShowDone = !ptShowDone; render(); }
@@ -525,19 +629,41 @@ function renderPt() {
   let h = `<div class="card"><div class="ct">🎫 积分对账（H・T・G）</div><div class="note">电脑每天 <b>13:30</b> 比三个数：<b>预约台账</b>（レストランボード 上客人用了多少积分）、<b>收银</b>（实际抵扣）、<b>店铺日报</b>（K=H・L=G・N=T）。<br>闭环：数据<b>只在源头改</b>（日报那一格／レストランボード 的状态／收银），第二天重算对上了就<b>自动消失</b>；改不了源头的（例：客人当天没用积分）在下面选原因签名。</div></div>`;
   if (!PT) return h + `<div class="card"><div class="note">${ptBusy ? '读取中…' : esc(ptErr || '还没有数据')}</div></div>`;
   if (ptErr) h += `<div class="miss">${esc(ptErr)}（显示的是上次读到的）</div>`;
-  const hd = (PT.rows || []).find(x => x && x.k === 'head') || {}, sts = (PT.rows || []).filter(x => x && x.k === 'st'), sg = PT.sg || {}, all = ptItems(), nw = new Set(hd.new || []);
+  const hd = (PT.rows || []).find(x => x && x.k === 'head') || {}, sg = PT.sg || {}, all = ptItems(), nw = new Set(hd.new || []);
   if (!hd.d) return h + '<div class="card"><div class="note">还没有生成（电脑每天 13:30 生成）</div></div>';
+  // 11/26 用户：「积分对账的期间选择也是需要的」→ 本月・上月・自选（电脑每天算 本月＋上个月整月；自选只能在这两个月里选）
+  const hpv = (PT.rows || []).find(x => x && x.k === 'hp'), stm = (PT.rows || []).filter(x => x && x.k === 'st'), stp = (PT.rows || []).filter(x => x && x.k === 'stp');
+  const lo = hpv ? hpv.from : hd.from, hi = hd.to;
+  if (ptP === 'm1' && !hpv) ptP = 'm0';
+  let fr = hd.from, to = hd.to, sts = stm, sumv = hd.sum || [], lab = Number((hd.m || hd.from || '').slice(5, 7)) + '月';
+  if (ptP === 'm1') { fr = hpv.from; to = hpv.to; sts = stp; sumv = hpv.sum || []; lab = Number(hpv.m.slice(5)) + '月'; }
+  if (ptP === 'c') {
+    fr = ptFrom && ptFrom >= lo ? ptFrom : lo; to = ptTo && ptTo <= hi ? ptTo : hi; if (fr > to) [fr, to] = [to, fr];
+    lab = fr.slice(5).replace('-', '/') + '〜' + to.slice(5).replace('-', '/');
+    const agg = {};
+    stm.concat(stp).forEach(s => {
+      const ym = (s.m || hd.m || '');
+      const a = agg[s.st] = agg[s.st] || { st: s.st, H: { pos: 0, dr: 0 }, T: { pos: 0, dr: 0 }, G: { pos: 0, dr: 0 } };
+      ['H', 'T', 'G'].forEach(q => Object.entries((s[q] || {}).dd || {}).forEach(([dd, v]) => { const d = ym + '-' + dd; if (d >= fr && d <= to) { a[q].pos += v[2]; a[q].dr += v[3]; } }));
+    });
+    sts = stm.map(s => agg[s.st]).filter(Boolean);
+    sumv = [];
+  }
+  const inP = x => String(x.d || '') >= fr && String(x.d || '') <= to;
   const td = new Date(), tds = td.getFullYear() + '-' + String(td.getMonth() + 1).padStart(2, '0') + '-' + String(td.getDate()).padStart(2, '0');
   if (hd.d !== tds) h += `<div class="miss">⚠ 这是 ${esc(hd.d)} 生成的，今天的还没出来（电脑每天 13:30 跑）。</div>`;
   if ((hd.dr_bad || []).length) h += `<div class="miss">⚠ 这几家店的日报没读到：${esc(hd.dr_bad.join('、'))}</div>`;
-  const open = all.map((x, i) => [x, i]).filter(([x]) => !sg[x.id]), done = all.map((x, i) => [x, i]).filter(([x]) => sg[x.id]);
+  const open = all.map((x, i) => [x, i]).filter(([x]) => !sg[x.id] && inP(x)), done = all.map((x, i) => [x, i]).filter(([x]) => sg[x.id] && inP(x));
+  h += '<div class="seg2" style="flex-wrap:wrap">' + [['m0', '本月'], ['m1', '上月'], ['c', '自选']].filter(([k]) => k !== 'm1' || hpv).map(([k, nm]) => `<button class="${ptP === k ? 'on' : ''}" style="flex:1 0 30%" onclick="ptSetP(${jq(k)})">${nm}</button>`).join('') + '</div>';
+  if (ptP === 'c') h += `<div class="stk" style="display:grid;grid-template-columns:1fr auto 1fr auto;gap:6px;align-items:center"><input id="ptf" type="date" min="${esc(lo)}" max="${esc(hi)}" value="${esc(fr)}"><span>〜</span><input id="ptt" type="date" min="${esc(lo)}" max="${esc(hi)}" value="${esc(to)}"><button class="btn" style="margin:0;padding:10px 12px;width:auto" onclick="ptSetC()">看</button></div><div class="note">能选 ${esc(lo.slice(5).replace('-', '/'))}〜${esc(hi.slice(5).replace('-', '/'))}（电脑每天算本月和上个月）。</div>`;
+  if (ptP === 'm1' && hpv.from > hpv.m + '-01') h += `<div class="miss">上月只比 ${esc(hpv.from.slice(5).replace('-', '/'))} 起：收银的积分付款数据从这天才开始保存，之前的日子没法比。</div>`;
   const nr = open.filter(([x]) => x.lv === 'r').length;
-  h += `<div class="note" style="margin:2px 2px 6px">${esc((hd.from || '').slice(5))}〜${esc((hd.to || '').slice(5))}・${esc(hd.at || '')} 算</div>`;
+  h += `<div class="note" style="margin:2px 2px 6px">期间：<b>${esc(lab)}</b>（${esc(fr.slice(5))}〜${esc(to.slice(5))}）・${esc(hd.at || '')} 算</div>`;
   h += `<div class="kp" style="grid-template-columns:repeat(3,1fr)"><div class="r"><b>${nr}</b><small>🔴 要查</small></div><div><b style="color:#d97706">${open.length - nr}</b><small>🟡 改状态/补日报</small></div><div><b style="color:var(--ok)">${done.length}</b><small>✅ 已处理</small></div></div>`;
-  h += `<div class="card"><div class="ct">🧠 负责人分析</div><ul class="an">${(hd.sum || []).map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>`;
+  if (sumv.length) h += `<div class="card"><div class="ct">🧠 负责人分析</div><ul class="an">${sumv.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>`;
   const oc = {};
   open.forEach(([x]) => { const k = x.st + '|' + x.p; oc[k] = (oc[k] || 0) + 1; });
-  h += `<div class="card"><div class="ct">各店（点店名只看那家）</div><div class="note" style="margin-top:0">格子：⚠＝还没处理的条数；下面小字＝本月 收银／日报（${'预约从 11/16 起才比'}）</div><table class="ptm"><tr><th>店</th><th>H</th><th>T</th><th>G</th></tr>`
+  h += `<div class="card"><div class="ct">各店（点店名只看那家）</div><div class="note" style="margin-top:0">格子：⚠＝还没处理的条数；下面小字＝这段期间 收银／日报（${'预约从 11/16 起才比'}）</div><table class="ptm"><tr><th>店</th><th>H</th><th>T</th><th>G</th></tr>`
     + sts.map(s => `<tr class="${ptStore === s.st ? 'on' : ''}" onclick="ptPick(${jq(s.st)})"><td>${esc(s.st)}</td>` + ['H', 'T', 'G'].map(p => {
       const v = s[p] || {}, c = oc[s.st + '|' + p] || 0;
       return `<td class="${c ? 'bad' : 'okc'}"><b>${c ? '⚠' + c : '✓'}</b><small>${n(v.pos)}／${n(v.dr)}</small></td>`;
